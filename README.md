@@ -22,7 +22,7 @@ import (
     "fmt"
     "net"
 
-    "github.com/<your-username>/enproto"
+    "github.com/ianchildress/enproto"
 )
 
 func main() {
