@@ -1,6 +1,7 @@
 package enproto
 
 import (
+	"bufio"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -23,10 +24,14 @@ var (
 // Framer handles our length‐prefixed, versioned frames.
 type Framer struct {
 	rw io.ReadWriter
+	bw *bufio.Writer
 }
 
 func NewFramer(rw io.ReadWriter) *Framer {
-	return &Framer{rw: rw}
+	return &Framer{
+		rw: rw,
+		bw: bufio.NewWriterSize(rw, 64*1024), // 64KB buffer
+	}
 }
 
 // WriteFrame sends a message of the given type.
@@ -37,11 +42,14 @@ func (f *Framer) WriteFrame(msgType byte, payload []byte) error {
 	header[3] = msgType
 	binary.BigEndian.PutUint32(header[4:8], uint32(len(payload)))
 
-	if _, err := f.rw.Write(header); err != nil {
-		return err
-	}
-	_, err := f.rw.Write(payload)
-	return err
+    if _, err := f.bw.Write(header); err != nil {
+        return err
+    }
+    if _, err := f.bw.Write(payload); err != nil {
+        return err
+    }
+	
+    return f.bw.Flush()
 }
 
 // ReadFrame reads the next frame, validates header, and returns msgType + payload.
