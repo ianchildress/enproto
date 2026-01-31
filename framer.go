@@ -16,6 +16,8 @@ const (
 	maxAllowed uint32 = 100 * 1024 * 1024
 )
 
+var header [8]byte
+
 var (
 	ErrBadMagic   = errors.New("invalid magic number")
 	ErrBadVersion = errors.New("unsupported protocol version")
@@ -23,14 +25,12 @@ var (
 
 // Framer handles our length‐prefixed, versioned frames.
 type Framer struct {
-	rw io.ReadWriter
 	br *bufio.Reader
 	bw *bufio.Writer
 }
 
 func NewFramer(rw io.ReadWriter) *Framer {
 	return &Framer{
-		rw: rw,
 		br: bufio.NewReaderSize(rw, 64*1024),
 		bw: bufio.NewWriterSize(rw, 64*1024), // 64KB buffer
 	}
@@ -38,32 +38,22 @@ func NewFramer(rw io.ReadWriter) *Framer {
 
 // WriteFrame writes a frame and flushes immediately (compat behavior).
 func (f *Framer) WriteFrame(msgType byte, payload []byte) error {
-	header := make([]byte, 8)
-	binary.BigEndian.PutUint16(header[0:2], Magic)
-	header[2] = ProtocolVersion
-	header[3] = msgType
-	binary.BigEndian.PutUint32(header[4:8], uint32(len(payload)))
-
-	if _, err := f.bw.Write(header); err != nil {
+	if err := f.WriteFrameBuffered(msgType, payload); err != nil {
 		return err
 	}
-	if _, err := f.bw.Write(payload); err != nil {
-		return err
-	}
-
 	return f.bw.Flush()
 }
 
 // WriteFrameBuffered writes a frame to the internal buffer.
 // Call Flush to ensure data is sent to the underlying writer.
 func (f *Framer) WriteFrameBuffered(msgType byte, payload []byte) error {
-	header := make([]byte, 8)
+	var header [8]byte
 	binary.BigEndian.PutUint16(header[0:2], Magic)
 	header[2] = ProtocolVersion
 	header[3] = msgType
 	binary.BigEndian.PutUint32(header[4:8], uint32(len(payload)))
 
-	if _, err := f.bw.Write(header); err != nil {
+	if _, err := f.bw.Write(header[:]); err != nil {
 		return err
 	}
 	if _, err := f.bw.Write(payload); err != nil {
@@ -80,8 +70,8 @@ func (f *Framer) Flush() error {
 
 // ReadFrame reads the next frame, validates header, and returns msgType + payload.
 func (f *Framer) ReadFrame() (msgType byte, payload []byte, err error) {
-	header := make([]byte, 8)
-	if _, err = io.ReadFull(f.br, header); err != nil {
+	var header [8]byte
+	if _, err = io.ReadFull(f.br, header[:]); err != nil {
 		return 0, nil, err
 	}
 
