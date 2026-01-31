@@ -24,12 +24,14 @@ var (
 // Framer handles our length‐prefixed, versioned frames.
 type Framer struct {
 	rw io.ReadWriter
+	br *bufio.Reader
 	bw *bufio.Writer
 }
 
 func NewFramer(rw io.ReadWriter) *Framer {
 	return &Framer{
 		rw: rw,
+		br: bufio.NewReaderSize(rw, 64*1024),
 		bw: bufio.NewWriterSize(rw, 64*1024), // 64KB buffer
 	}
 }
@@ -79,7 +81,7 @@ func (f *Framer) Flush() error {
 // ReadFrame reads the next frame, validates header, and returns msgType + payload.
 func (f *Framer) ReadFrame() (msgType byte, payload []byte, err error) {
 	header := make([]byte, 8)
-	if _, err = io.ReadFull(f.rw, header); err != nil {
+	if _, err = io.ReadFull(f.br, header); err != nil {
 		return 0, nil, err
 	}
 
@@ -97,8 +99,25 @@ func (f *Framer) ReadFrame() (msgType byte, payload []byte, err error) {
 	}
 
 	payload = make([]byte, length)
-	if _, err = io.ReadFull(f.rw, payload); err != nil {
+	if _, err = io.ReadFull(f.br, payload); err != nil {
 		return 0, nil, err
 	}
 	return msgType, payload, nil
+}
+
+// WriteBuffered returns the number of bytes currently queued in the write buffer.
+func (f *Framer) WriteBuffered() int {
+	if f.bw == nil {
+		return 0
+	}
+	return f.bw.Buffered()
+}
+
+// ReadBuffered returns the number of bytes currently buffered and ready to be read
+// without reading from the underlying io.Reader.
+func (f *Framer) ReadBuffered() int {
+	if f.br == nil {
+		return 0
+	}
+	return f.br.Buffered()
 }
