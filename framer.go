@@ -34,7 +34,7 @@ func NewFramer(rw io.ReadWriter) *Framer {
 	}
 }
 
-// WriteFrame sends a message of the given type.
+// WriteFrame writes a frame and flushes immediately (compat behavior).
 func (f *Framer) WriteFrame(msgType byte, payload []byte) error {
 	header := make([]byte, 8)
 	binary.BigEndian.PutUint16(header[0:2], Magic)
@@ -42,14 +42,38 @@ func (f *Framer) WriteFrame(msgType byte, payload []byte) error {
 	header[3] = msgType
 	binary.BigEndian.PutUint32(header[4:8], uint32(len(payload)))
 
-    if _, err := f.bw.Write(header); err != nil {
-        return err
-    }
-    if _, err := f.bw.Write(payload); err != nil {
-        return err
-    }
-	
-    return f.bw.Flush()
+	if _, err := f.bw.Write(header); err != nil {
+		return err
+	}
+	if _, err := f.bw.Write(payload); err != nil {
+		return err
+	}
+
+	return f.bw.Flush()
+}
+
+// WriteFrameBuffered writes a frame to the internal buffer.
+// Call Flush to ensure data is sent to the underlying writer.
+func (f *Framer) WriteFrameBuffered(msgType byte, payload []byte) error {
+	header := make([]byte, 8)
+	binary.BigEndian.PutUint16(header[0:2], Magic)
+	header[2] = ProtocolVersion
+	header[3] = msgType
+	binary.BigEndian.PutUint32(header[4:8], uint32(len(payload)))
+
+	if _, err := f.bw.Write(header); err != nil {
+		return err
+	}
+	if _, err := f.bw.Write(payload); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Flush flushes the buffered writer.
+func (f *Framer) Flush() error {
+	return f.bw.Flush()
 }
 
 // ReadFrame reads the next frame, validates header, and returns msgType + payload.
