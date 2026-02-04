@@ -97,6 +97,46 @@ func (f *Framer) ReadFrame() (msgType byte, payload []byte, err error) {
 	return msgType, payload, nil
 }
 
+// ReadFrameSharedBuffer reads the next frame, validates header, and returns msgType + payload.
+// NOTE: payload is backed by an internal reusable buffer and is only valid until
+// the next ReadFrameSharedBuffer call on this Framer.
+func (f *Framer) ReadFrameSharedBuffer() (msgType byte, payload []byte, err error) {
+	var header [8]byte
+	if _, err = io.ReadFull(f.br, header[:]); err != nil {
+		return 0, nil, err
+	}
+
+	if magic := binary.BigEndian.Uint16(header[0:2]); magic != Magic {
+		return 0, nil, ErrBadMagic
+	}
+	if version := header[2]; version != ProtocolVersion {
+		return 0, nil, ErrBadVersion
+	}
+	msgType = header[3]
+
+	length := int(binary.BigEndian.Uint32(header[4:8]))
+	if uint32(length) > maxAllowed {
+		return 0, nil, fmt.Errorf("frame too large: %d", length)
+	}
+
+	// Ensure reusable buffer is large enough.
+	if cap(f.rbuf) < length {
+		// Grow to at least length; optionally over-allocate to reduce future grows.
+		// This is a normal heap allocation but happens rarely (only when size increases).
+		newCap := cap(f.rbuf) * 2
+		if newCap < length {
+			newCap = length
+		}
+		f.rbuf = make([]byte, newCap)
+	}
+
+	payload = f.rbuf[:length]
+	if _, err = io.ReadFull(f.br, payload); err != nil {
+		return 0, nil, err
+	}
+	return msgType, payload, nil
+}
+
 // WriteBuffered returns the number of bytes currently queued in the write buffer.
 func (f *Framer) WriteBuffered() int {
 	if f.bw == nil {
