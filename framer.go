@@ -27,6 +27,8 @@ var (
 type Framer struct {
 	br *bufio.Reader
 	bw *bufio.Writer
+
+	rbuf []byte // reusable read payload buffer
 }
 
 func NewFramer(rw io.ReadWriter) *Framer {
