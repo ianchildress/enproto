@@ -70,13 +70,19 @@ func (f *Framer) Flush() error {
 	return f.bw.Flush()
 }
 
-// ReadFrame reads the next frame, validates header, and returns msgType + payload.
+// ReadFrame reads the next frame from the underlying reader and validates the protocol header.
+// It returns the message type and a payload slice.
+//
+// Note: This function allocates a new byte slice for the payload on every call,
+// making it safe for the caller to retain or mutate the returned data indefinitely.
 func (f *Framer) ReadFrame() (msgType byte, payload []byte, err error) {
+	// Protocol header is 8 bytes: [2B Magic][1B Version][1B Type][4B Length]
 	var header [8]byte
 	if _, err = io.ReadFull(f.br, header[:]); err != nil {
 		return 0, nil, err
 	}
 
+	// Validate protocol constraints to avoid processing malformed data.
 	if magic := binary.BigEndian.Uint16(header[0:2]); magic != Magic {
 		return 0, nil, ErrBadMagic
 	}
@@ -90,10 +96,13 @@ func (f *Framer) ReadFrame() (msgType byte, payload []byte, err error) {
 		return 0, nil, fmt.Errorf("frame too large: %d", length)
 	}
 
+	// Explicitly allocate a new slice to hold the incoming data.
+	// This ensures that the returned payload is independent of any internal framer buffers.
 	payload = make([]byte, length)
 	if _, err = io.ReadFull(f.br, payload); err != nil {
 		return 0, nil, err
 	}
+
 	return msgType, payload, nil
 }
 
